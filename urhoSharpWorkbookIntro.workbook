@@ -1,0 +1,92 @@
+---
+uti: com.xamarin.workbook
+id: 869e23c6-58fd-4d3d-96e9-1b155c602644
+title: urhoSharpWorkbookIntro
+platforms:
+- Console
+packages:
+- id: UrhoSharp
+  version: 1.5.22
+---
+
+Projemize Eklediğimiz UrhoSharp paketinin referansı Workbook a otomatik olarak aşağıdaki şekilde eklenir.
+
+```csharp
+#r "Urho"
+```
+
+Bu workbook için kullanılacak olan ilgili namespaceleri workbook muza ekliyoruz. Bu örnek için sadece Urho dll’i yeterli olacak.
+
+```csharp
+using Urho;
+```
+
+Workbook’ta UrhoSharp ile uğraşırken, SimpleApplication sınıfından yararlanıyoruz. Bu sınıfın static Show() metodu bizden bir ApplicationOptions istiyor, bunu tanımlayıp istediğimiz boyutlarda bir 3D bir canvas oluşturuyoruz. SimpleApplication nesnesi, bize bir Urho Application yaratıyor ve aynı zamanda sahnemize kullanıma hazır bir Camera ve Light Nodeları ekliyor. Bir de Root Node tanımlıyor. Bu Root Node’u geri kalan tüm node larımızı tanımlarken eklemek için kullanacağız.
+
+```csharp
+var app = SimpleApplication.Show(new ApplicationOptions{
+    Width = 500,
+    Height = 500
+});
+```
+
+Bir çizgi çizmek için ihtiyacım olan iki farklı noktayı(Vertex) tanımlıyorum. Bunu tanımlarken VertexBuffer sınıfının PositionNormal structure ından faydalanıyorum. Dizimi aşağıdaki şekilde tanımlayabilirim.
+
+```csharp
+VertexBuffer.PositionNormal[] vertices = {
+    new VertexBuffer.PositionNormal{
+        Position = new Vector3(0,0,0)
+    },
+    new VertexBuffer.PositionNormal{
+        Position = new Vector3(2,0,0)
+    }
+};
+```
+
+Şimdi VertexBuffer nesnemi oluşturacağım ve oluşturduğum vertices’i bu nesnede toplayacağım.UrhoSharp her ne kadar C# API’a sahip olsa da, C++’tan yapılan çevirmelerin aşağıdaki gibi etkilerini görmemiz mümkün. VertexBuffer nesnemizin Size ve Datasını vermek için, SetSize ve SetData metodlarından yararlanıyorum.
+
+```csharp
+var vertexBuffer = new VertexBuffer(Application.CurrentContext, false){
+    Shadowed = true
+};
+vertexBuffer.SetSize((uint)vertices.Length, ElementMask.Position | ElementMask.Normal, false);
+vertexBuffer.SetData(vertices);
+```
+
+Sırada Geometry nesnemizi oluşturmak var. Hatırlarsanız, bir veya daha çok VertexBuffer nesnemizi ve bunların ne şekilde birleşip yorumlanacaklarını Geometry objesi sayesinde UrhoSharp’a söylüyorduk.Şimdi bunu yapalım.
+
+SetDrawRange metoduna dikkat edelim, burada tam olarak bu vertices in ne şekilde birleştirmek istediğimizi söylüyoruz.
+
+```csharp
+var geometry = new Geometry();
+geometry.SetVertexBuffer(0, vertexBuffer);
+geometry.SetDrawRange(PrimitiveType.LineList, 0, 0, 0, (uint)vertices.Length, true);
+```
+
+Sıra Model nesnemize geldi. Bir veya birden çok geometry nesnemizi bir araya getirmek için kullandığımız nesne Model nesnesi.Şimdi bunu oluşturalım.Bu model tek bir geometry nesnesinden oluşacak. BoundingBox property sinin set etmemiz gerekiyor fakat verdiğimiz Vector3 lerin değerleri çok önemli değil şu aşamada.
+
+```csharp
+var model = new Model();
+model.NumGeometries = 1;
+model.SetGeometry(0, 0, geometry);
+model.BoundingBox = new BoundingBox(new Vector3(0,0,0), new Vector3(1,1,1));
+```
+
+Bu modelimizde kullanmak istediğimiz material nesnesini oluşturalım. Herhangi bir bitmap vs kullanmadan sadece Model’ime bir renk vermek istiyorum.
+
+```csharp
+var material = Material.FromColor(Color.Blue);
+```
+
+Evet artık neredeyse tüm temel nesnelerim hazır. Şimdi oluşturduğum bu modeli, gerçekten görsel olarak ekranda göstereceğim Node nesnemi oluşturup ona bir StaticModel component i ekleyerek onu hayata geçireceğim. Node nesnemi yaratırken öncelikle o node u silmem gerekiyor, çünkü önceden de bahsettiğimiz gibi, Workbook’ta her bir hücre tekrar tekrar çalıştığı için, duplicate node larım olsun istemiyorum. Bu yeni oluşturucağım node nesnemi, SimpleApplication’ ın benim için oluşturduğu RootNode’ a ekleyeceğim.GetChild metodu node u bulamaz ise null dönecek, fakat bu Remove Child metodu için sorun değil. Eğer null bir dönüş olursa işlemi kesecek ve hata almayacağım.
+
+```csharp
+app.RootNode.RemoveChild(app.RootNode.GetChild("lineNode"));
+var lineNode = app.RootNode.CreateChild("lineNode");
+
+var line = lineNode.CreateComponent<StaticModel>();
+line.Model = model;
+line.SetMaterial(material);
+```
+
+Vee karşımızda düz bir mavi çizgi =) Çıktısı küçük ama öğretisi büyük bir örnek oldu. Bundan sonraki örneklerimizden devam ederken, tüm bu nesne yaratım hiyerarşisinde devam ediyor olacağız.
