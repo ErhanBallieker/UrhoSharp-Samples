@@ -1,0 +1,348 @@
+---
+uti: com.xamarin.workbook
+id: e605be0c-1248-45eb-b957-5fe47563b30f
+title: urhoSamples2
+platforms:
+- Console
+packages:
+- id: UrhoSharp
+  version: 1.5.22
+---
+
+```csharp
+#r "Urho"
+```
+
+Önce örneğimizde kullanacağımız namespacelerimizi, workbook’umuza ekliyoruz.
+
+```csharp
+using Urho;
+using Urho.Shapes;
+using Urho.Actions;
+using Urho.Physics;
+```
+
+Şimdi Daha önceki örneklerimizde görmüş olduğumuz, SimpleApplication sınıfı yardımı ile 3D canvas’ımızı oluşturuyoruz.
+
+```csharp
+var app = SimpleApplication.Show(new ApplicationOptions{
+    Width = 750,
+    Height = 750
+});
+```
+
+Canvas’ımız oluştuktan sonra, SimpleApplication nesnesinin bizim için oluşturduğu CameraNode’unun Position ve Direction propertylerini değiştirelim.
+
+```csharp
+app.CameraNode.Position = new Vector3(0, 0, -5);
+app.CameraNode.SetDirection(new Vector3(0, 0, 1));
+```
+
+SimpleApplication’ın oluşturduğu RootNode’un Position’ı default nasıl oluşmuş bir bakalım.
+
+```csharp
+app.RootNode.Position;
+```
+
+Gördüğünüz gibi RootNode 0,-2,8 koordinatlarına eklenmiş. Bunu ORigine taşıyalım.
+
+```csharp
+app.RootNode.Position = new Vector3(0,0,0);
+```
+
+Şimdi SimpleApplication’ın oluşturduğu CameraNode ve bu node’a eklediği light ı silip, biz kendimiz oluşturalım.Light componentimi direk Scene’e tanımlamak istiyorum.Default olarak Light tipi Point tanımlanırdı hatırlarsanız. Biz bunu Directional olarak tanımlayalım.
+
+```csharp
+// Camera Node a ait tüm child node ları siliyoruz
+app.CameraNode.RemoveAllChildren();
+
+// directional light'ı Scene'e eklemeden önce kaldırıyoruz. Hatırlarsanız bu işlemleri workbook taki her bir hücrenin birden çok kez çalışması sebebi ile, duplicate node'lar oluşturmamak için yapıyorduk.
+app.Scene.RemoveChild(app.Scene.GetChild("directionalLight"));
+Node lightNode = app.Scene.CreateChild("directionalLight");
+
+// Light Node'uma Light Componenti ekliyorum.
+Light light = lightNode.CreateComponent<Light>();
+light.LightType = LightType.Directional;
+light.Color = new Color(0.65f, 0.65f, 0.65f);
+
+// 3D sahnelerde genellikle ışık, oyuncunun sol omzunun üzerinden geliyormuş gibi bir yönde set edilir. Bunun için,aşağıdaki şekilde bir Vector3 tanımlıyorum.
+lightNode.SetDirection(new Vector3(2, -3, 1));
+
+// Simple Application tarafından oluşturulan Zone nesnesinin Ambient color rengini veriyorum. Bunun light componentinin Color değeri ile toplamının 1'i geçmemesine dikkat edin. Aksi halde normalden fazla parlak bir sahneniz olacaktır.
+app.Zone.AmbientColor = new Color(0.35f, 0.35f, 0.35f);
+```
+
+Oluşan 3D canvas da, mouse ile hareket edebilme özelliği vardır. Mouse’ın sol tuşuna basılı tutarak hareket ettirirseniz, camera’nın oynadığını farkedeceksiniz. Ben cameranın oynamasını değil de, Mouse’umu hareket ettirdiğimde 3D ortamı daha iyi anlamak için RootNode nesnemi Rotate etmek istiyorum.
+
+```csharp
+//Önce Mouse hareketiyle cameranın oynamaması için aşadağıki SimpleApplication nesnesinde aşağıdaki değişikliği yapıyorum
+app.MoveCamera = false;
+```
+
+Şimdi mouse’un sol tuşuna basılı halde hareket ettiğimde, RootNode’u hareket ettirecek event handler ı oluşturacağım.Sonrasında da bu event handler SimpleApplication objesinin Update event ine atayacağım. Bu update metodu, UrhoSharp ın Game Loop ‘unda tetiklenen event. Normal bir UrhoSharp application’da OnUpdate metodunu override ederek de ilerleyebilirsiniz. u metod sahnedeki obje ve animayon yoğunluğuna bağlı olarak saniyede 20 kere de çalışabilir 200 kere de..
+
+```csharp
+//Update event ine atayacağım event handler ı tanımlıyorum.
+void ProcessMouseMovement(UpdateEventArgs args)
+{
+    //GElen input Mouse un sol tuşu ise..
+    if (app.Input.GetMouseButtonDown(MouseButton.Left))
+    {
+        //Mouse un X ve Y koordinatları ile 2 boyutlu bir vektör tanımlıyorum. Y değerine, mouse un Y değerinin negatifini set ediyorum, çünkü mouse u yukarı oynattığımda aşağıyı, aşağı oynattığımda yukarıyı göstermek istiyorum.
+        Vector2 mouseMove = new Vector2(app.Input.MouseMove.X, -app.Input.MouseMove.Y);
+        
+        //Her bir piksel için 1 derece kabul ediyorum
+        float angle = mouseMove.Length; 
+
+        if (angle > 0)
+        {
+            //Aşağıda bir vector3 tanımlıyorum, Z her zaman 0, fakat RootNode a döndürme hareketi yaptıracağım için, X ekseninde mouse u hareket ettirdiğim Y ekseni etrafında döndürüyor olucam bu yüzden X değerine mouse hareketinin Y değerini veriyorum, aynı şekilde de Y değeri yerine mouse hareketinin negatifi X değerini veriyorum.
+            Vector3 axis = new Vector3(mouseMove.Y, -mouseMove.X, 0);
+            app.RootNode.Rotate(Quaternion.FromAxisAngle(axis, angle), TransformSpace.Parent);
+        }
+    }
+}
+```
+
+Ve tekrar workbook taki her bir hücrenin tekrar tekrar çalışabilir olmasından dolayı, biraz reflection ile, SimpleApplication’ın Update event ini kaldırıyorum.
+
+```csharp
+using System.Reflection;
+FieldInfo field = typeof(Application).GetField("Update", BindingFlags.Instance | BindingFlags.NonPublic);
+field.SetValue(app, null);
+
+//Event i kaldırdıktan sonra tekrar Upadte event ine hazırldağım event handler set ediyorum.
+app.Update += ProcessMouseMovement;
+```
+
+Peki, Canvas’ımızı oluşturduktan sonra bayağı bir hazırlık kodu yazdık.Birkaç farklı şeyi de irdelemiş olduk. Artık düz bi çizgiden fazlasını yapmaya başlayalım. Önce ekrana bir üçgen çizelim kod ile. Sonra, Scen’deki 3 boyutu daha iyi algılamamız için, tüm eksenler yönünde farklı renklerde çizgiler çizelim. Sonrasında da, Urho.Shapes namespace i ile neleri daha kolay yapabiliriz bir bakalım.
+
+```csharp
+//üçgenin noktalarını bir VertexBuffer.PositionNormalColor dizi olarak tanımlayalım.
+VertexBuffer.PositionNormalColor[] vertices = {
+    new VertexBuffer.PositionNormalColor{
+        Position = new Vector3(-3,0, 5),
+        Color = Color.Blue.ToUInt()
+    },
+    new VertexBuffer.PositionNormalColor{
+        Position = new Vector3(0 ,3, 5),
+        Color = Color.Yellow.ToUInt()
+    },
+    new VertexBuffer.PositionNormalColor{
+        Position = new Vector3(3, 0, 5),
+        Color = Color.Red.ToUInt()
+    },
+};
+// Z eksenine göre 5 değerinde, yani ekrandan 5 birim uzaklıkta, Tabanı X ekseninde ve yüksekliği Y eksenin 3. birimde olacak şekilde 3 vertex tanımladım.
+```
+
+Şimdi VertexBuffer objemizi oluşturalım.
+
+```csharp
+var vertexBuffer = new VertexBuffer(Application.CurrentContext, false);
+vertexBuffer.SetSize((uint)vertices.Length, ElementMask.Position | ElementMask.Normal | ElementMask.Color);
+vertexBuffer.SetData(vertices);
+//Bu sefer oluşturduğum vertex in Color değerinide kullandığım için, Position ve Normal flag leri yanında ElementMask.Color flag ini de vertexBuffer ın Size ını set ederken, eklemem gerekiyor.
+```
+
+Şimdi Geometry objemi oluşturup, bu üç vertex i, üçgen olarak birleştirmek istediğimi söyleyeceğim.
+
+```csharp
+var geometry = new Geometry();
+geometry.SetVertexBuffer(0, vertexBuffer);
+geometry.SetDrawRange(PrimitiveType.TriangleList, 0, 0, 0, (uint)vertices.Length, true);
+//SetDrawRange metodu ile bu iç noktayı TriangleList olarak birleştirmek istediğimi söyledim. Yani vertices dizimde 9 vertex im olsa idi, her bir üçlü bir üögen oluşturacaktı.
+```
+
+Sırada bu geometriyi kullnacak Model objemi oluşturmak var.
+
+```csharp
+var model = new Model();
+model.NumGeometries = 1;
+model.SetGeometry(0, 0, geometry);
+model.BoundingBox = new BoundingBox(new Vector3(0,0,0), new Vector3(1,1,1));
+```
+
+Şimdi Material objemi oluşturucağım. Bunu yaparken yine bir bitmap kullanmayıp, sadece bir renkten türeyen Material nesnesi oluşturacağım.
+
+```csharp
+var material = Material.FromColor(Color.Green);
+```
+
+Artık bu model ve material objelerini birleştericeğim static model nesnemi yaratmam ve bu nesneyi ekranda bir node a eklemem gerek.Şimdi bunu yapalım. Node’u eklemeden önce silmeyi unutmayalım.
+
+```csharp
+app.RootNode.RemoveChild(app.RootNode.GetChild("triangleNode"));//GetChild metodu ilgili node u bulamazsa null dönecek ama bu RemoveChild metodu için sorun değil, işlem doğrudan ignore edilir.
+
+//Node u oluşturuyorum.
+var triangleNode = app.RootNode.CreateChild("triangleNode");
+
+//Static Model componentimi oluşturuyorum.
+var triangle = triangleNode.CreateComponent<StaticModel>();
+
+//model i set edelim.
+triangle.Model = model;
+
+//material ı set edelim.
+triangle.SetMaterial(material);
+```
+
+Tüm bu işlemlerden sonra ekran yeşil bir üçgen gördük. İstersek mouse un sol tuşuna basılı tutarak RootNode un rotate edip etrafını gezebiliriz üçgenimizin. Fakat birşeye dikkat ettiniz mi? Vertexleri tanımlarken her birine birer Color atamıştım, fakat en sonunda Material oluştururken verdiğim Yeşil renk bu değerleri ezmiş oldu. Bunu ortadan kaldırmak için yapmam gereken Material bir Technique set etme olacak.
+
+```csharp
+//NoTextureVCol değerindeki NoTexture bir bitmap kullanma demek, VCol kısmı ise Vertex Color kullan demek.  
+material.SetTechnique(0, CoreAssets.Techniques.NoTextureVCol, 1, 1);
+
+//Bu kodu çalıştırdığımda vertexlerin renklerininde olaya dahil olduğunu göreceğim.Fakat yeşil rengi ortadan kaldırmak için Material'ı oluştururken renksiz bir instance oluşturmak gerek. Yukarıda Materail ı tanımlarken bu değişikliği yapıp tekrar deneyip görmenizi öneririm.Bunu yaptığınızda tamamen Kırmızı sarı ve mavi renklerinin karışım bir üçgen görüyor olacaksınız.
+```
+
+Şimdi yukarıda bahsettiğimiz gibi, tüm eksenler boyunca farklı renklerde çizgiler çizelim ki, RootNode u hareket ettirdikçe 3D sahneyi daha rahat algılayalım. Bunun için her bir eksen yönünde -50, +50 aralığında çizgiler çizmemiz yeterli olacaktır.
+
+```csharp
+//Tüm vertexleri ekleyeceğim listeyi oluştuyorum...
+var lineVertices = new List<VertexBuffer.PositionNormalColor>();
+```
+
+-50, + 50 aralığında eksenleri çizelim demiştik. Şimdi bu döngüyü kurup, vertex lerimizi yukarıda tanımladığımız listeye ekleyelim.Ama bunun da öncesinde, Tüm eksenleri tanımladığım basit bir dizi oluşturalım. Sonuçta her bir eksen için, bu -50 +50 döngüsü çalışmalı. Döngünün sonunda her bir eksen 100 tane totalde 300 adet vertices olmalı elimde.
+
+```csharp
+Vector3[] unitLineVertices = {Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ};
+```
+
+Satırın çıktısında gördüğünüz gibi, her bir eksen bir birim vektör tanımlamak için oluşturulmuş UnitX,UnitY, UnitZ field larından yararlandım. Bu birazdan vector oluştururken de işimize yarayacak.
+
+```csharp
+foreach(var unitVector in unitLineVertices)
+{
+    for(int i = -50; i < 50; i++)
+    {
+        //yeni bir vertex oluşturuyorum.
+        var lineVertex = new VertexBuffer.PositionNormalColor
+        {
+            Position = i * unitVector, //int * birim vector = Vector3.. ör: i = 5 için Position = (1,0,0) * 5 => (5,0,0) olacak. 
+
+            //X eksenindeysem kırmızı, Y eksenindeysem Yeşil, Z eksenindeysem mavi bir çizgi istiyorum.
+            Color = unitVector == Vector3.UnitX ? Color.Red.ToUInt() : (unitVector == Vector3.UnitY ? Color.Green.ToUInt() : Color.Blue.ToUInt())
+        };
+
+        lineVertices.Add(lineVertex);
+    }
+}
+```
+
+Şimdi yukarıdaki sırayla gidelim(VertexBuffer -> Geometry -> Model -> Material -> Static Model -> Node). Bu sefer dikkat etmemiz gereken tek şey, Geometry objemizi oluştururken PrimitiveType olarak LineList kullanmak olacak.
+
+```csharp
+var lineVertexBuffer = new VertexBuffer(Application.CurrentContext,false);
+lineVertexBuffer.SetSize((uint)lineVertices.Count, ElementMask.Position |ElementMask.Normal |ElementMask.Color, false);
+lineVertexBuffer.SetData(lineVertices.ToArray());
+
+var lineGeometry = new Geometry();
+lineGeometry.SetVertexBuffer(0, lineVertexBuffer);
+lineGeometry.SetDrawRange(PrimitiveType.LineList, 0, 0, 0, (uint)lineVertices.Count, true);
+
+var lineModel = new Model();
+lineModel.NumGeometries = 1;
+lineModel.SetGeometry(0, 0, lineGeometry); 
+lineModel.BoundingBox = new BoundingBox(new Vector3(0,0,0), new Vector3(1,1,1));
+
+var lineMaterial = new Material();
+lineMaterial.SetTechnique(0, CoreAssets.Techniques.NoTextureVCol, 1, 1);
+
+app.RootNode.RemoveChild(app.RootNode.GetChild("lineNode"));
+var lineNode = app.RootNode.CreateChild("lineNode");
+
+var line = lineNode.CreateComponent<StaticModel>();
+line.Model = lineModel;
+line.SetMaterial(lineMaterial);
+```
+
+Yukarıda farklı birşey yapmadık. Bu kodu çalıştırdığımızda, istediğimiz 100 birimlik tüm eksenlerimiz de farklı renklerde çizgiler çizmiş olduk. Üçgenimizin tam olarak Z eksenin +5 değerinde olduğunu daha rahat görebiliriz.Mouse ile biraz oynayarak sahnemizi gezebiliriz.
+
+Biraz da Urho kendi Shape namespace inden faydalanıp, daha az kod ile daha fazla şey yapmak vakti geldi. Şimdi origin e bir adet küre ekleyelim. Bunun için Urho.Shapes namespace i altındaki Sphere Component ini kullanacağız. Sphere gibi 8 adet hazır shape mevcut. Biz bu örnekte hepsini görmeyecek olsakta, sizin hepsini ekrana ekleyip görmenizde, el alışkanlığı kazanmanız fayda var.
+
+```csharp
+//Direk olarak küremi koyacağım Node u üreterek işe başlıyorum.
+app.RootNode.RemoveChild(app.RootNode.GetChild("sphereNode"));
+var sphereNode = app.RootNode.CreateChild("sphereNode");
+
+//StaticModel componenti yerine, bu component ten türeyen ama farklı özelliklere de sahip olan Sphere Componentini ekliyorum node'uma
+var sphere = sphereNode.CreateComponent<Sphere>();
+sphere.Color = Color.Blue;
+//Bu componentin Color propertysi sayesinde direk renk set edebiliyorum. StaticModel Componentinde normalde böyle bir property yok. Material kullanıyordum renk bitmap vb set etmek için.
+```
+
+Vee bu kadar. Tam olarak orijinde, 1 birim çapında, mavi bir kürem oluştu bile.\
+Şimdi birde küp ekleyelim. Ve ona biraz animasyon katalım.
+
+```csharp
+app.RootNode.RemoveChild(app.RootNode.GetChild("boxNode"));
+
+var boxNode = app.RootNode.CreateChild("boxNode");
+var box = boxNode.CreateComponent<Box>();
+box.Color = Color.Red;
+
+//boxnode un position değerini değiştirelim.
+boxNode.Position = new Vector3(3,3,3);
+```
+
+Ekranda kırmızı bir box nesnesini görebiliriz.Şimdi biraz animasyon katalım.Animasyonu yaratırken Node nesnesinin FiniteTimeAction objesini kullnacağız. Birden çok action’ı node a set edebiliriz.
+
+```csharp
+FiniteTimeAction boxAction = 
+    new RepeatForever(
+        //Rotate by action ı ile rotation animasyonunu ekliyorum.
+        new RotateBy(duration: 5, //Animasyonun kaç saniyede tamamlanmasını istediğimi söylüyorum.
+                     deltaAngleX: 0,
+                     deltaAngleY: 360,//Y ekseni etrafında 360 derece dönecek ve sürekli çalışacak bir action oluşturuyorum.
+                     deltaAngleZ: 0
+        )
+    );
+
+//Önce tüm action ları siliyoruz.
+boxNode.RemoveAllActions();
+
+//Sonrada action'ı node a ekliyorum.
+boxNode.RunActions(boxAction);
+```
+
+Şimdi de, 100X100 lük bir yüzey (düzlem) oluşturalım. Sonrada bu yüzeyin fizik kanunları ile etkilenmesi için rigid body ve collision shape ini tanımlayıp, Bu düzlemimiz gibi birde sphere oluşturup onu da yerçekiminde etkilenip yüzeye düşecek şekilde tasarlayalım.
+
+```csharp
+app.RootNode.RemoveChild(app.RootNode.GetChild("planeNode"));
+
+var planeNode = app.RootNode.CreateChild("planeNode");
+var plane = planeNode.CreateComponent<Urho.Shapes.Plane>();
+plane.Color = Color.Green;
+
+//100X100 lük olsun demiştik. Scale i değiştirelim.
+planeNode.SetScale(100);
+
+//Bu noktadan itibaren yeşil düzlemimiz canvasımızda belirdi.Şimdi rigidBody ve collision shape componentlerimiz tanımlayalım.
+//RigidBody
+var planeRigidBody = planeNode.CreateComponent<RigidBody>();
+
+//CollisionShape nesnesi, modelimizin diğer modeller ile etkileşim sınırlarını belirler.
+var planeCollisionShape = planeNode.CreateComponent<CollisionShape>();
+planeCollisionShape.SetStaticPlane(new Vector3(100,0,100), Quaternion.Identity);
+```
+
+Şimdi yerçekiminden etkilenecek ve yüzeye düşecek küremizi oluşturalım.
+
+```csharp
+app.RootNode.RemoveChild(app.RootNode.GetChild("rigidSphereNode"));
+var rigidSphereNode = app.RootNode.CreateChild("rigidSphereNode");
+rigidSphereNode.SetScale(2);
+rigidSphereNode.Position = new Vector3(-3,5,2);
+
+var rigidSphere = rigidSphereNode.CreateComponent<Sphere>();
+rigidSphere.Color = Color.Yellow;
+
+var sphereRigidBody = rigidSphereNode.CreateComponent<RigidBody>();
+sphereRigidBody.Mass = 1;
+
+var sphereCollisionShape = rigidSphereNode.CreateComponent<CollisionShape>();
+sphereCollisionShape.SetSphere(2, Vector3.Zero, Quaternion.Identity);
+```
+
+Yukarıdaki kod bloğunu da çalıştırdığımızda, sarı bir kürenin ekranda belirip, plane üzerine düştüğünü ve rootnode’ un rotasyonu olduğu yöne doğru kaydığını görüyoruz.
